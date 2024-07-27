@@ -1,3 +1,5 @@
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,70 +45,56 @@ void mutate(char **programs, int num_programs, int tape_size) {
     }
 }
 
-void print_programs(char **programs, int num_programs) {
-    for (int i = 0; i < num_programs; i++) {
-        printf("%s\n", programs[i]);
-    }
-}
-
-double calculate_high_order_entropy(char **programs, int num_programs, int tape_size) {
-    int total_length = num_programs * tape_size;
-    int freq[256] = {0};
-    double shannon_entropy = 0.0, kolmogorov_complexity = 0.0;
-
-    for (int i = 0; i < num_programs; i++) {
-        for (int j = 0; j < tape_size; j++) {
-            freq[(unsigned char)programs[i][j]]++;
-        }
-    }
-
-    for (int i = 0; i < 256; i++) {
-        if (freq[i] > 0) {
-            double p = (double)freq[i] / total_length;
-            shannon_entropy -= p * log2(p);
-        }
-    }
-
-    for (int i = 0; i < num_programs; i++) {
-        kolmogorov_complexity += (double)strlen(programs[i]) / tape_size;
-    }
-
-    double normalized_kolmogorov = kolmogorov_complexity / num_programs;
-    return shannon_entropy - normalized_kolmogorov;
-}
-
 void print_grid(char **programs, int num_programs) {
     int side_length = (int)ceil(sqrt(num_programs));
+    glClear(GL_COLOR_BUFFER_BIT);
+
     for (int i = 0; i < side_length; i++) {
         for (int j = 0; j < side_length; j++) {
             int index = i * side_length + j;
             if (index < num_programs) {
                 char *program = programs[index];
                 for (int k = 0; k < TAPE_SIZE; k++) {
-                    if (program[k] < 64) {
-                        printf(".");
-                    } else if (program[k] < 128) {
-                        printf(":");
-                    } else if (program[k] < 192) {
-                        printf("o");
-                    } else {
-                        printf("@");
-                    }
-                }
-            } else {
-                for (int k = 0; k < TAPE_SIZE; k++) {
-                    printf(" ");
+                    float x = (float)j / side_length * 2 - 1;
+                    float y = (float)i / side_length * 2 - 1;
+                    float size = 2.0 / side_length;
+
+                    float intensity = (float)program[k] / 255.0;
+                    glColor3f(intensity, intensity, intensity);
+                    glBegin(GL_QUADS);
+                    glVertex2f(x, y);
+                    glVertex2f(x + size, y);
+                    glVertex2f(x + size, y + size);
+                    glVertex2f(x, y + size);
+                    glEnd();
                 }
             }
-            printf(" ");
         }
-        printf("\n");
     }
-    printf("\n");
+    glfwSwapBuffers(glfwGetCurrentContext());
 }
 
 int main() {
     srand(time(NULL));
+
+    if (!glfwInit()) {
+        fprintf(stderr, "Failed to initialize GLFW\n");
+        return -1;
+    }
+
+    GLFWwindow* window = glfwCreateWindow(800, 800, "Primordial Soup", NULL, NULL);
+    if (!window) {
+        fprintf(stderr, "Failed to open GLFW window\n");
+        glfwTerminate();
+        return -1;
+    }
+
+    glfwMakeContextCurrent(window);
+    glewExperimental = GL_TRUE;
+    if (glewInit() != GLEW_OK) {
+        fprintf(stderr, "Failed to initialize GLEW\n");
+        return -1;
+    }
 
     char *programs[NUM_PROGRAMS];
     for (int i = 0; i < NUM_PROGRAMS; i++) {
@@ -116,36 +104,28 @@ int main() {
     BFFInterpreter interpreter;
     bff_init(&interpreter);
 
-    FILE *data_file = fopen("complexity_data.txt", "w");
-    if (!data_file) {
-        perror("Failed to open file");
-        return 1;
-    }
-
-    for (int epoch = 0; epoch < 10000; epoch++) {
-        for (int i = 0; i < NUM_PROGRAMS; i++) {
-            for (int j = i + 1; j < NUM_PROGRAMS; j++) {
-                run_interaction(&interpreter, programs, i, j);
+    while (!glfwWindowShouldClose(window)) {
+        for (int epoch = 0; epoch < 1000; epoch++) {
+            for (int i = 0; i < NUM_PROGRAMS; i++) {
+                for (int j = i + 1; j < NUM_PROGRAMS; j++) {
+                    run_interaction(&interpreter, programs, i, j);
+                }
             }
+            mutate(programs, NUM_PROGRAMS, TAPE_SIZE);
+
+            // Print grid to OpenGL window
+            print_grid(programs, NUM_PROGRAMS);
+
+            glfwPollEvents();
         }
-        mutate(programs, NUM_PROGRAMS, TAPE_SIZE);
-        double complexity = calculate_high_order_entropy(programs, NUM_PROGRAMS, TAPE_SIZE);
-        //fprintf(data_file, "%d %f\n", epoch, complexity);
-        //printf("Epoch: %d, Complexity: %f\n", epoch, complexity);
-
-        // Print grid to terminal
-        // printf("Epoch %d:\n", epoch);
-        print_grid(programs, NUM_PROGRAMS);
-        // printf("\n");
     }
-
-    fclose(data_file);
-
-    // print_programs(programs, NUM_PROGRAMS);
 
     for (int i = 0; i < NUM_PROGRAMS; i++) {
         free(programs[i]);
     }
+
+    glfwDestroyWindow(window);
+    glfwTerminate();
 
     return 0;
 }
